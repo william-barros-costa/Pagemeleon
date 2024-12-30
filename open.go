@@ -31,6 +31,14 @@ type PDF struct {
 	XrefTable map[uint]Xref
 }
 
+type Trailer struct {
+	startXref uint
+	size uint
+	root *Object
+	Info *Object
+
+}
+
 type PdfScanner struct {
 	bufio.Scanner
 	Objects   []Object
@@ -73,7 +81,7 @@ func (p *PdfScanner) GetXrefGroup(offset int, size int) {
 			panic(fmt.Sprintf("Missing line %d to %d", i, size))
 		}
 		line := p.Scanner.Text()
-		if !isXrefEntry(line){
+		if !isXrefEntry(line) {
 			panic(fmt.Sprintf("Expected line of type 'offset generation status'. Instead got: %s", line))
 		}
 		parts := strings.Split(line, " ")
@@ -138,6 +146,18 @@ func (p *PdfScanner) Scan() {
 		if isXref(line) {
 			p.ExtractXref(line)
 		}
+		if isTrailer(line) {
+			p.ExtractTrailer(line)
+		}
+	}
+}
+
+func (p *PdfScanner) ExtractTrailer(line string) Trailer {
+	for p.Scanner.Scan() {
+		line := p.Scanner.Text()
+		if isEOF(line) {
+			break
+		}
 	}
 }
 
@@ -171,4 +191,8 @@ func isXrefGroupHeader(line string) bool {
 
 func isXrefEntry(line string) bool {
 	return verifyRegex(line, `^\d+ \d+ [fn]$`)
+}
+
+func isEOF(line string) bool {
+	return verifyRegex(line, "%%EOF")
 }
