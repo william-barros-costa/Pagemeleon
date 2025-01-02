@@ -3,9 +3,30 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
+)
+
+const (
+	START_OBJECT_REGEX      = `^\d+ \d+ obj$`
+	END_OBJECT_REGEX        = `^endobj$`
+	START_XREF_REGEX        = `^xref$`
+	XREF_GROUP_HEADER_REGEX = `^\d+ \d+$`
+	XREF_GROUP_ENTRY_REGEX  = `^\d+ \d+ [fn]$`
+	END_XREF_REGEX          = `^trailer$`
+	START_TRAILER_REGEX     = `^trailer$`
+	END_TRAILER_REGEX       = `%%EOF`
+	START_DICTIONARY        = `^\s*<<`
+	END_DICTIONARY          = `.*\s*>>`
+
+	TRAILER_REFEX    = `(?:^|\s+)trailer([\s\S]*?)%%EOF`
+	XREF_REGEX       = `(?:^|\s+)xref([\s\S]*?)trailer`
+	OBJECT_REGREX    = `(\d+) (\d+) obj([\s\S]+?)endobj`
+	OUTER_DICTIONARY = `(\/\w+)?\s*<<(.*)>>`
+	STREAM           = `stream([\s\S]+?)endstream`
 )
 
 type Header struct {
@@ -33,16 +54,14 @@ type PDF struct {
 
 type Trailer struct {
 	startXref uint
-	size uint
-	root *Object
-	Info *Object
-
+	size      uint
+	root      *Object
+	Info      *Object
 }
 
 type PdfScanner struct {
 	bufio.Scanner
-	Objects   []Object
-	XrefTable map[uint]Xref
+	pdf *PDF
 }
 
 type Xref struct {
@@ -50,6 +69,11 @@ type Xref struct {
 	byteoffset uint
 	generation uint
 	free       bool
+}
+
+type Dictionary struct {
+	Entries map[string]interface{}
+	Parent  *Dictionary
 }
 
 func (p *PdfScanner) ExtractObject(line string) Object {
@@ -63,7 +87,7 @@ func (p *PdfScanner) ExtractObject(line string) Object {
 	for p.Scanner.Scan() {
 		line := p.Scanner.Text()
 		parts = append(parts, line)
-		if isEndObject(line) {
+		if verifyRegex(line, END_OBJECT_REGEX) {
 			found = true
 			break
 		}
@@ -75,13 +99,72 @@ func (p *PdfScanner) ExtractObject(line string) Object {
 	return obj
 }
 
+func open(location string) {
+	file, err := os.Open(location)
+	if err != nil {
+		panic(err)
+	}
+	contents, err := io.ReadAll(file)
+	if err != nil {
+		panic(err)
+	}
+	fileContent := string(contents)
+	objectRegex := regexp.MustCompile(OBJECT_REGREX)
+	objects := objectRegex.FindAllStringSubmatch(fileContent, -1)
+
+	// xrefRegex := regexp.MustCompile(XREF_REGEX)
+	// xrefTable := xrefRegex.FindAllString(fileContent, -1)
+
+	// trailerRegex := regexp.MustCompile(TRAILER_REFEX)
+	// trailerTable := trailerRegex.FindAllStringSubmatch(fileContent, -1)
+
+	for _, entry := range objects[:1] {
+		dictionaryRegex := regexp.MustCompile(OUTER_DICTIONARY)
+		text := entry[0]
+		fmt.Println(text)
+		var key, value string
+		objectDict := Dictionary{
+			Entries: make(map[string]interface{}),
+		}
+		currentDict := objectDict
+		for dictionary := dictionaryRegex.FindAllStringSubmatch(text, -1); dictionary != nil; text = value {
+			elements := dictionary[0]
+			if len(elements) == 3 {
+				key = elements[1]
+				value = elements[2]
+				
+			} else {
+				value = elements[1]
+				currentDict.Entries["entries"] = value
+			}
+			dictionary = dictionaryRegex.FindAllStringSubmatch(text, -1)
+			parentDict := currentDict
+			currentDict = Dictionary{
+				Entries: make(map[string]interface{}),
+				Parent: &parentDict,
+			}
+		}
+		// //
+		// 		object := Object{
+		// 			ID:       uint(getInt(entry[1])),
+		// 			Revision: uint(getInt(entry[2])),
+		// 			Data:     objects[3],
+		// 		}
+		// 		fmt.Println(object)
+		// |(?:<<.*?>>)
+		// |(?:\[.*?\])
+		// (?m)\/(\w+)((?:\(.*?\)))
+		// \/(\w+)\s*((?:\(.*?\))|(?:\[.*?\])|(?:<<.*?>>)|(?:))
+	}
+}
+
 func (p *PdfScanner) GetXrefGroup(offset int, size int) {
 	for i := 0; i < size; i++ {
 		if !p.Scanner.Scan() {
 			panic(fmt.Sprintf("Missing line %d to %d", i, size))
 		}
 		line := p.Scanner.Text()
-		if !isXrefEntry(line) {
+		if !verifyRegex(line, XREF_GROUP_ENTRY_REGEX) {
 			panic(fmt.Sprintf("Expected line of type 'offset generation status'. Instead got: %s", line))
 		}
 		parts := strings.Split(line, " ")
@@ -89,7 +172,7 @@ func (p *PdfScanner) GetXrefGroup(offset int, size int) {
 		if !strings.Contains("nf", parts[2]) {
 			panic(fmt.Sprintf("Expect status of type 'n' or 'f' but, got '%s'", parts[2]))
 		}
-		p.XrefTable[id] = Xref{
+		p.pdf.XrefTable[id] = Xref{
 			id:         uint(id),
 			byteoffset: uint(getInt(parts[0])),
 			generation: uint(getInt(parts[1])),
@@ -102,14 +185,13 @@ func (p *PdfScanner) ExtractXref(line string) {
 	for p.Scanner.Scan() {
 		line := p.Scanner.Text()
 		parts := strings.Split(line, " ")
-		if isXrefGroupHeader(line) {
+		if verifyRegex(line, XREF_GROUP_HEADER_REGEX) {
 			offset := getInt(parts[0])
 			size := getInt(parts[1])
 			p.GetXrefGroup(int(offset), size)
-		} else if isTrailer(line) {
+		} else if verifyRegex(line, END_XREF_REGEX) {
 			break
 		} else {
-			println(len(parts), line)
 			panic("Xref table is corrupted. It expected line of type '<offset> <size>' but got: " + line)
 		}
 	}
@@ -139,14 +221,14 @@ func parseStartObject(line string) (uint, uint) {
 func (p *PdfScanner) Scan() {
 	for p.Scanner.Scan() {
 		line := strings.TrimSpace(p.Text())
-		if isStartObject(line) {
+		if verifyRegex(line, START_OBJECT_REGEX) {
 			obj := p.ExtractObject(line)
-			p.Objects = append(p.Objects, obj)
+			p.pdf.Objects = append(p.pdf.Objects, obj)
 		}
-		if isXref(line) {
+		if verifyRegex(line, START_XREF_REGEX) {
 			p.ExtractXref(line)
 		}
-		if isTrailer(line) {
+		if verifyRegex(line, START_TRAILER_REGEX) {
 			p.ExtractTrailer(line)
 		}
 	}
@@ -155,14 +237,16 @@ func (p *PdfScanner) Scan() {
 func (p *PdfScanner) ExtractTrailer(line string) Trailer {
 	for p.Scanner.Scan() {
 		line := p.Scanner.Text()
-		if isEOF(line) {
+		if verifyRegex(line, END_TRAILER_REGEX) {
 			break
 		}
+		if verifyRegex(line, `^<<`) {
+			fmt.Println(line)
+		}
 	}
-}
-
-func isStartObject(line string) bool {
-	return verifyRegex(line, `^\d+ \d+ obj$`)
+	return Trailer{
+		startXref: uint(0),
+	}
 }
 
 func verifyRegex(line string, regex string) bool {
@@ -171,28 +255,4 @@ func verifyRegex(line string, regex string) bool {
 		return false
 	}
 	return re.MatchString(line)
-}
-
-func isEndObject(line string) bool {
-	return verifyRegex(line, `^endobj$`)
-}
-
-func isXref(line string) bool {
-	return verifyRegex(line, `^xref$`)
-}
-
-func isTrailer(line string) bool {
-	return verifyRegex(line, `^trailer$`)
-}
-
-func isXrefGroupHeader(line string) bool {
-	return verifyRegex(line, `^\d+ \d+$`)
-}
-
-func isXrefEntry(line string) bool {
-	return verifyRegex(line, `^\d+ \d+ [fn]$`)
-}
-
-func isEOF(line string) bool {
-	return verifyRegex(line, "%%EOF")
 }
