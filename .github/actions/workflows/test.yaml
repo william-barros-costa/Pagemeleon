@@ -1,0 +1,33 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    if: ${{ github.repository == 'william-barros-costa' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23.x
+          check-latest: true
+      - name: Test
+        run: go test ./...
+      - name: Format
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          go list -f {{.Dir}} ./... | xargs -I{} gofmt -w -s {}
+          go list -f {{.Dir}} ./... | xargs -I{} goimports -w {}
+          go mod tidy
+
+
+
+
