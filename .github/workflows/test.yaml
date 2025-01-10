@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    if: ${{ github.repository == 'william-barros-costa' }}
+    if: ${{ github.repository == 'william-barros-costa/Pagemeleon' }}
     runs-on: ubuntu-latest
 
     steps:
