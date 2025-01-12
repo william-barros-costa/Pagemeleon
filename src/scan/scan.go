@@ -14,6 +14,7 @@ Functions:
 package scan
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -22,8 +23,8 @@ import (
 )
 
 const (
-	PDF_HEADER = "%PDF-x.x"
-	BLOCK_SIZE = 4096
+	PDF_HEADER       = "%PDF-x.x"
+	BLOCK_SIZE int64 = 4096
 )
 
 // Verifies if file exists, has size > 0 and, is not a directory
@@ -75,15 +76,55 @@ func ExtractTrailer(pdfReader *os.File) (
 	Trailer,
 	error,
 ) {
-	_, err := pdfReader.Seek(0, io.SeekEnd)
+	block := BLOCK_SIZE
+	size := Size(pdfReader)
+	if BLOCK_SIZE > size {
+		block = size
+	}
+	_, err := pdfReader.Seek(int64(-block), io.SeekEnd)
 	if err != nil {
+		fmt.Println(err)
 		return Trailer{}, err
 	}
 	buffer := make([]byte, BLOCK_SIZE)
+	var content []byte
+	found := false
 	for {
 		_, err := pdfReader.Read(buffer)
 		if err != nil {
 			return Trailer{}, err
 		}
+		content = append(content, buffer...)
+		if strings.Contains(string(content), "trailer") {
+			found = true
+			break
+		}
+		read, err := pdfReader.Seek(int64(-block), io.SeekCurrent)
+		if read == 0 {
+			break
+		}
+		if err == nil {
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		return Trailer{}, err
 	}
+
+	if !found {
+		return Trailer{}, errors.New("PDF is missing trailer keyword")
+	}
+
+	index := bytes.Index(content, []byte("trailer"))
+	content = content[index:]
+	return Trailer{}, nil
+}
+
+func Size(f *os.File) int64 {
+	fileInfo, err := f.Stat()
+	if err != nil {
+		return 0
+	}
+	return fileInfo.Size()
 }

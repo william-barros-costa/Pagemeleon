@@ -101,7 +101,7 @@ func TestExtractTrailer(t *testing.T) {
 				t.Errorf("VerifyFile() failed: %v", gotErr)
 			} else if gotErr != nil && tt.error != gotErr.Error() {
 				t.Errorf("VerifyFile() Error = %v, want %v", gotErr, tt.error)
-			} else if tt.wantErr {
+			} else if tt.wantErr && gotErr == nil {
 				t.Error("Expected Error but did not get it")
 			} else if !got.Equal(tt.want) {
 				t.Errorf("VerifyFile() = %v, want %v", got, tt.want)
