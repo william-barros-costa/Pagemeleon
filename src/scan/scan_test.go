@@ -94,7 +94,7 @@ func TestExtractTrailer(t *testing.T) {
 		// {name: "Trailer has no Root Object", location: TRAILER_NO_ROOT, wantErr: true, error: "Trailer is missing Root Object"},
 		{name: "Trailer has no startxref Keyword", location: TRAILER_NO_STARTXREF, wantErr: true, error: "Trailer is missing startxref keyword"},
 		{name: "Trailer Dictionary is missing size", location: TRAILER_DICTIONARY_NO_SIZE, wantErr: true, error: "trailer's dictionary is missing size keyword"},
-		{name: "Trailer has no Dictionary", location: TRAILER_NO_DICTIONARY, wantErr: true, error: "Trailer is missing startxref keyword"},
+		{name: "Trailer has no Dictionary", location: TRAILER_NO_DICTIONARY, wantErr: true, error: "Trailer is missing dictionary"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
