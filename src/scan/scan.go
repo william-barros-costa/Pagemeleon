@@ -128,8 +128,17 @@ func ExtractTrailer(pdfReader *os.File) (
 	startDictionary := bytes.Index(content, []byte("trailer")) + len("trailer")
 	endDictionary := bytes.Index(content, []byte("startxref"))
 
-	if startDictionary >= endDictionary || len(bytes.TrimSpace(content[startDictionary:endDictionary])) == 0 {
+	if startDictionary >= endDictionary {
 		return Trailer{}, errors.New("Trailer is missing dictionary")
+	}
+
+	dictionary := bytes.TrimSpace(content[startDictionary:endDictionary])
+	if len(dictionary) == 0 {
+		return Trailer{}, errors.New("Trailer is missing dictionary")
+	}
+
+	if !bytes.Contains(dictionary, []byte("/Size")) {
+		return Trailer{}, errors.New("trailer's dictionary is missing size keyword")
 	}
 
 	return Trailer{}, nil
