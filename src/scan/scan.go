@@ -76,6 +76,7 @@ func ExtractTrailer(pdfReader *os.File) (
 	Trailer,
 	error,
 ) {
+	// If block is bigger than file size an error occurs so, we address this below
 	block := BLOCK_SIZE
 	size := Size(pdfReader)
 	if BLOCK_SIZE > size {
@@ -83,7 +84,6 @@ func ExtractTrailer(pdfReader *os.File) (
 	}
 	_, err := pdfReader.Seek(int64(-block), io.SeekEnd)
 	if err != nil {
-		fmt.Println(err)
 		return Trailer{}, err
 	}
 	buffer := make([]byte, BLOCK_SIZE)
@@ -118,6 +118,20 @@ func ExtractTrailer(pdfReader *os.File) (
 
 	index := bytes.Index(content, []byte("trailer"))
 	content = content[index:]
+
+	for _, member := range []string{"%%EOF", "startxref"} {
+		if !bytes.Contains(content, []byte(member)) {
+			return Trailer{}, fmt.Errorf("Trailer is missing %s keyword", member)
+		}
+	}
+
+	startDictionary := bytes.Index(content, []byte("trailer")) + len("trailer")
+	endDictionary := bytes.Index(content, []byte("startxref"))
+
+	if startDictionary >= endDictionary || len(bytes.TrimSpace(content[startDictionary:endDictionary])) == 0 {
+		return Trailer{}, errors.New("Trailer is missing dictionary")
+	}
+
 	return Trailer{}, nil
 }
 
