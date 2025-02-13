@@ -23,3 +23,12 @@ const (
 	SOLIDUS              byte = byte(47)
 	PERCENT_SIGN         byte = byte(37)
 )
+
+func isWhitespace(b byte) bool {
+	return b == SPACE ||
+		b == CARRIAGE_RETURN ||
+		b == LINE_FEED ||
+		b == FORM_FEED ||
+		b == HORIZONTAL_TAB ||
+		b == NULL
+}
