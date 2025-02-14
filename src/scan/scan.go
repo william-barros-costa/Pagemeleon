@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -39,7 +40,7 @@ func VerifyFile(fileLocation string) (bool, error) {
 	if fileInfo.IsDir() {
 		return false, fmt.Errorf("%q is a directory, not a file", fileLocation)
 	}
-	return tbe, nil
+	return true, nil
 }
 
 func VerifyFileIsPDF(pdfReader *os.File) (bool, error) {
@@ -58,7 +59,7 @@ func VerifyFileIsPDF(pdfReader *os.File) (bool, error) {
 	if !strings.HasPrefix(string(buffer), "%PDF-") {
 		return false, fmt.Errorf("Expected string of type \"%%PDF-x.x\", got %q", buffer)
 	}
-	return tbe, nil
+	return true, nil
 }
 
 func OpenFile(fileLocation string) (*os.File, error) {
@@ -82,7 +83,6 @@ func ExtractTrailer(pdfReader *os.File) (
 	if BLOCK_SIZE > size {
 		block = size
 	}
-	fmt.Println("")
 	_, err := pdfReader.Seek(int64(-block), io.SeekEnd)
 	if err != nil {
 		return Trailer{}, err
@@ -97,7 +97,7 @@ func ExtractTrailer(pdfReader *os.File) (
 		}
 		content = append(buffer, content...)
 		if strings.Contains(string(content), "trailer") {
-			found = tbe
+			found = true
 			break
 		}
 		read, err := pdfReader.Seek(int64(-block), io.SeekCurrent)
@@ -142,10 +142,10 @@ func ExtractTrailer(pdfReader *os.File) (
 		return Trailer{}, errors.New("trailer's dictionary is missing size keyword")
 	}
 
-	var parts [][]byte = SplitDictionary(dictionary)
-	for _, part := range parts {
-		fmt.Println(string(part))
-	}
+	//	var parts [][]byte = SplitDictionary(dictionary)
+	//	for _, part := range parts {
+	//		fmt.Println(string(part))
+	//	}
 
 	return Trailer{}, nil
 }
@@ -175,31 +175,48 @@ func SplitDictionary(dictionary []byte) [][]byte {
 		current = append(current, b)
 	}
 	return append(elements, current)
-
 }
 
-func ScanParts(parts [][]byte) {
-	for _, part := range parts {
-		if bytes.HasPrefix(part, []byte("/")) {
-			fmt.Println(part)
-		}
-	}
-}
+//func ScanParts(parts [][]byte) {
+//	for _, part := range parts {
+//		if bytes.HasPrefix(part, []byte("/")) {
+//			fmt.Println(part)
+//		}
+//	}
+//}
 
-func Scan(dictionary []byte) {
+func Scan(dictionary []byte) []Object {
 	objects := make([]Object, 0)
 	currentObject := make([][]byte, 0)
 	current := make([]byte, 0)
 	for _, b := range dictionary {
-		if isWhitespace(b) {
+		if b == byte('/') {
+			currentObject = make([][]byte, 0)
+			current = make([]byte, 0)
+		} else if isWhitespace(b) {
 			currentObject = append(currentObject, current)
 			current = make([]byte, 0)
-		}
-		if b == byte('/') {
+		} else if b == byte('R') && len(currentObject) == 3 {
+			fmt.Println(len(currentObject))
+			fmt.Println(currentObject[2])
 			objects = append(objects, Object{
-				Id:         uint(currentObject[1]),
-				Generation: uint(currentObject[2]),
+				Name:       string(currentObject[0]),
+				Id:         toUint(currentObject[1]),
+				Generation: toUint(currentObject[2]),
 			})
+			currentObject = make([][]byte, 0)
+			current = make([]byte, 0)
+		} else {
+			current = append(current, b)
 		}
 	}
+	return objects
+}
+
+func toUint(b []byte) uint {
+	number, err := strconv.ParseUint(string(b), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return uint(number)
 }

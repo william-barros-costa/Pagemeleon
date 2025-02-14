@@ -113,3 +113,29 @@ func TestExtractTrailer(t *testing.T) {
 		})
 	}
 }
+
+func TestScan(t *testing.T) {
+	tests := []struct {
+		name       string // description of this test case
+		dictionary []byte
+		expected   []Object
+	}{
+		{
+			name:       "Simple with only one tag",
+			dictionary: []byte("/Root 0 0 R"),
+			expected: []Object{
+				{Name: "Root", Id: 0, Generation: 0},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objects := Scan(tt.dictionary)
+			for i, object := range objects {
+				if !object.Equal(tt.expected[i]) {
+					t.Errorf("Scan() = %v, want %v", object, tt.expected[i])
+				}
+			}
+		})
+	}
+}
